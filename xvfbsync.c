@@ -592,6 +592,12 @@ static void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan,
 {
   if (buf)
   {
+    struct xvsfsync_dma_info info;
+    info.fd = encSyncChan->syncChannel.sync->fd;
+    if (ioctl (encSyncChan->syncChannel.sync->fd, XVSFSYNC_GET_PHY_ADDR, &info))
+      printf("ioctl error\n");
+    printf("IOCTL PHY ADDR: %d", info.phy_addr);
+    printf("Passed PHY ADDR: %d", buf->phyAddr);
     /* we do not support adding buffer when the pipeline is running */
     assert (!encSyncChan->isRunning);
     xvfbsync_queue_push (&encSyncChan->buffers, buf);
