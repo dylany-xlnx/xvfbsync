@@ -1,7 +1,7 @@
-APP = syncip
+APP = xvfbsync
 LIBSOURCES=*.c
 OUTS = *.o
-NAME := syncip
+NAME := xvfbsync
 MAJOR = 1.0
 MINOR = 1
 VERSION = $(MAJOR).$(MINOR)
