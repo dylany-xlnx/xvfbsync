@@ -32,7 +32,8 @@
 
 #define MIN(a,b) ((a) < (b) ? a : b)
 
-static void xvfbsync_queue_init (struct Queue* q) {
+static void xvfbsync_queue_init (struct Queue* q) 
+{
   if(!q)
     return;
 
@@ -41,14 +42,16 @@ static void xvfbsync_queue_init (struct Queue* q) {
   q->size = 0;
 }
 
-static LLP2Buf* xvfbsync_queue_front (struct Queue* q) {
+static LLP2Buf* xvfbsync_queue_front (struct Queue* q) 
+{
   if (!q)
     return NULL;
 
   return q->front->buf;
 }
 
-static void xvfbsync_queue_pop (struct Queue* q) {
+static void xvfbsync_queue_pop (struct Queue* q) 
+{
   if(!q || q->size == 0)
     return;
 
@@ -79,7 +82,8 @@ static void xvfbsync_queue_push (struct Queue* q, LLP2Buf* bufptr)
   }
 }
 
-static int xvfbsync_queue_empty (struct Queue* q) {
+static int xvfbsync_queue_empty (struct Queue* q) 
+{
   if (!q)
     return -1;
 
@@ -114,7 +118,7 @@ static void parseChanStatus (struct xvsfsync_stat* status,
   }
 }
 
-void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP)
+static void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP)
 {
   struct xvsfsync_stat chan_status;
 
@@ -124,7 +128,7 @@ void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP)
     syncIP->maxChannels, syncIP->maxUsers, syncIP->maxBuffers);
 }
 
-void xvfbsync_syncIP_resetStatus(struct SyncIp1* syncIP, int chanId)
+static void xvfbsync_syncIP_resetStatus(struct SyncIp1* syncIP, int chanId)
 {
   struct xvsfsync_clr_err clr;
   clr.channel_id = chanId;
@@ -167,7 +171,7 @@ int xvfbsync_syncIP_getFreeChannel(struct SyncIp1* syncIP)
   return -1;
 }
 
-void xvfbsync_syncIP_enableChannel(struct SyncIp1* syncIP, int chanId)
+static void xvfbsync_syncIP_enableChannel(struct SyncIp1* syncIP, int chanId)
 {
   u8 chan = chanId;
 
@@ -175,7 +179,7 @@ void xvfbsync_syncIP_enableChannel(struct SyncIp1* syncIP, int chanId)
     printf ("Couldn't enable channel %d\n", chanId);
 }
 
-void xvfbsync_syncIP_disableChannel(struct SyncIp1* syncIP, int chanId)
+static void xvfbsync_syncIP_disableChannel(struct SyncIp1* syncIP, int chanId)
 {
   u8 chan = chanId;
 
@@ -183,13 +187,13 @@ void xvfbsync_syncIP_disableChannel(struct SyncIp1* syncIP, int chanId)
     printf ("Couldn't disable channel %d\n", chanId);
 }
 
-void xvfbsync_syncIP_addBuffer(struct SyncIp1* syncIP, struct xvsfsync_chan_config* fbConfig)
+static void xvfbsync_syncIP_addBuffer(struct SyncIp1* syncIP, struct xvsfsync_chan_config* fbConfig)
 {
   if (ioctl (syncIP->fd, XVSFSYNC_SET_CHAN_CONFIG, fbConfig))
     printf ("Couldn't add buffer");
 }
 
-void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
+static void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
 {
   AL_EDriverError retCode = AL_Driver_PostMessage(syncIP->driver, syncIP->fd, 
     AL_POLL_MSG, &timeout);
@@ -236,21 +240,21 @@ static void* xvfbsync_syncIP_pollingRoutine(void* arg)
   return NULL;
 }
 
-void xvfbsync_syncIP_addListener(struct SyncIp1* syncIP, int chanId, void (*delegate)(struct ChannelStatus1*))
+static void xvfbsync_syncIP_addListener(struct SyncIp1* syncIP, int chanId, void (*delegate)(struct ChannelStatus1*))
 {
   pthread_mutex_lock (&(syncIP->mutex));
   syncIP->eventListeners[chanId] = delegate;
   pthread_mutex_unlock (&(syncIP->mutex));
 }
 
-void xvfbsync_syncIP_removeListener(struct SyncIp1* syncIP, int chanId)
+static void xvfbsync_syncIP_removeListener(struct SyncIp1* syncIP, int chanId)
 {
   pthread_mutex_lock (&(syncIP->mutex));
   syncIP->eventListeners[chanId] = NULL;
   pthread_mutex_unlock (&(syncIP->mutex));
 }
 
-struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, int chanId)
+static struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, int chanId)
 { 
   pthread_mutex_lock (&(syncIP->mutex));
   xvfbsync_syncIP_getLatestChanStatus(syncIP);
@@ -260,23 +264,26 @@ struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, int cha
 
 
 int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, AL_TDriver* driver, 
-  char const* device)
+  char const* device, int fd)
 {
   struct threadInfo* tInfo = calloc (1, sizeof(struct threadInfo));
   tInfo->syncIP = syncIP;
   syncIP->driver = driver;
   syncIP->quit = false;
-  syncIP->fd = AL_Driver_Open (driver, device);
+  if(driver == NULL || device == NULL)
+    syncIP->fd = fd;
+  else
+    syncIP->fd = AL_Driver_Open (driver, device);
 
   if (syncIP->fd == -1) {
-    printf ("Couldn't open the sync ip (trying to use %s)", device);
+    printf ("Couldn't open the sync ip\n");
     return -1;
   }
 
   struct xvsfsync_config config;
   
   if (ioctl (syncIP->fd, XVSFSYNC_GET_CFG, &config)) {
-    printf ("Couldn't get sync ip configuration");
+    printf ("Couldn't get sync ip configuration\n");
     return -1;
   }
 
@@ -338,14 +345,14 @@ static void printFrameBufferConfig(struct xvsfsync_chan_config* config, int maxU
   printf ("********************************\n");
 }
 
-int xvsfsync_chan_getLumaSize(LLP2Buf* buf)
+static int xvsfsync_chan_getLumaSize(LLP2Buf* buf)
 {
   if(AL_IsTiled(buf->tFourCC))
     return buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight / 4;
   return buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight;
 }
 
-int xvsfsync_chan_getChromaSize(LLP2Buf* buf)
+static int xvsfsync_chan_getChromaSize(LLP2Buf* buf)
 {
   AL_EChromaMode eCMode = AL_GetChromaMode(buf->tFourCC);
 
@@ -363,7 +370,7 @@ int xvsfsync_chan_getChromaSize(LLP2Buf* buf)
   return buf->tPlanes[PLANE_UV].iPitch * iHeightC * 2;
 }
 
-int xvsfsync_chan_getOffsetUV(LLP2Buf* buf)
+static int xvsfsync_chan_getOffsetUV(LLP2Buf* buf)
 {
   assert(buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight <= buf->tPlanes[PLANE_UV].iOffset ||
          (AL_IsTiled(buf->tFourCC) &&
@@ -504,7 +511,7 @@ static void xvfbsync_syncChan_listener (struct ChannelStatus1* status)
   printf ("watchdog: %d, sync: %d, ldiff: %d, cdiff: %d\n", status->watchdogError, status->syncError, status->lumaDiffError, status->chromaDiffError);
 }
 
-void xvfbsync_syncChan_disable (struct SyncChannel1* syncChan)
+static void xvfbsync_syncChan_disable (struct SyncChannel1* syncChan)
 {
   if (!syncChan->enabled)
     assert (0 == "Tried to disable a channel twice");
@@ -514,7 +521,7 @@ void xvfbsync_syncChan_disable (struct SyncChannel1* syncChan)
   printf ("Disable channel %d\n", syncChan->id);
 }
 
-void xvfbsync_syncChan_populate (struct SyncChannel1* syncChan, struct SyncIp1* syncIP, int id)
+static void xvfbsync_syncChan_populate (struct SyncChannel1* syncChan, struct SyncIp1* syncIP, int id)
 {
   syncChan->sync = syncIP;
   syncChan->id = id;
@@ -522,7 +529,7 @@ void xvfbsync_syncChan_populate (struct SyncChannel1* syncChan, struct SyncIp1* 
   xvfbsync_syncIP_addListener(syncIP, id, &xvfbsync_syncChan_listener);
 }
 
-void xvfbsync_syncChan_depopulate (struct SyncChannel1* syncChan)
+static void xvfbsync_syncChan_depopulate (struct SyncChannel1* syncChan)
 {
   if(syncChan->enabled)
     xvfbsync_syncChan_disable (syncChan);
@@ -581,7 +588,7 @@ void xvfbsync_encSyncChan_depopulate (struct EncSyncChannel1* encSyncChan)
   }
 }
 
-void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf, int numFbToEnable)
+static void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf, int numFbToEnable)
 {
   if (buf)
   {
@@ -636,12 +643,3 @@ void xvfbsync_encSyncChan_enable(struct EncSyncChannel1* encSyncChan)
   pthread_mutex_unlock (&encSyncChan->mutex);
 }
 
-void samplelib()
-{
-    printf("Hello World! - sample lib\n");
-}
-
-int xvfbsync_dec_addBuffer(int fd, struct xvsfsync_chan_config* fbConfig)
-{
-    return ioctl(fd, XVSFSYNC_SET_CHAN_CONFIG, fbConfig);
-}

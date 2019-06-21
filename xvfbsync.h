@@ -112,25 +112,16 @@ struct threadInfo
 };
 
 
-void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP);
-void xvfbsync_syncIP_resetStatus(struct SyncIp1* syncIP, int chanId);
 int xvfbsync_syncIP_getFreeChannel(struct SyncIp1* syncIP);
-void xvfbsync_syncIP_enableChannel(struct SyncIp1* syncIP, int chanId);
-void xvfbsync_syncIP_disableChannel(struct SyncIp1* syncIP, int chanId);
-void xvfbsync_syncIP_addBuffer(struct SyncIp1* syncIP, struct xvsfsync_chan_config* fbConfig);
-void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout);
-static void* xvfbsync_syncIP_pollingRoutine(void* arg);
-void xvfbsync_syncIP_addListener(struct SyncIp1* syncIP, int chanId, void (*delegate)(struct ChannelStatus1*));
-void xvfbsync_syncIP_removeListener(struct SyncIp1* syncIP, int chanId);
-struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, int chanId);
-int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, AL_TDriver* driver, char const* device);
+int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, AL_TDriver* driver, char const* device, int fd);
 void xvfbsync_syncIP_depopulate (struct SyncIp1* syncIP);
-void xvfbsync_syncChan_disable (struct SyncChannel1* syncChan);
-void xvfbsync_syncChan_populate (struct SyncChannel1* syncChan, struct SyncIp1* syncIP, int id);
-void xvfbsync_syncChan_depopulate (struct SyncChannel1* syncChan);
+
 void xvfbsync_decSyncChan_addBuffer(struct DecSyncChannel1* decSyncChan, AL_TBuffer* buf);
 void xvfbsync_decSyncChan_enable(struct DecSyncChannel1* decSyncChan);
 void xvfbsync_decSyncChan_populate(struct DecSyncChannel1* decSyncChan, struct SyncIp1* syncIP, int id);
 void xvfbsync_decSyncChan_depopulate(struct DecSyncChannel1* decSyncChan);
-void samplelib();
-int addBuffer(struct xvsfsync_chan_config* fbConfig);
+
+void xvfbsync_encSyncChan_addBuffer(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf);
+void xvfbsync_encSyncChan_enable(struct EncSyncChannel1* encSyncChan);
+void xvfbsync_encSyncChan_populate (struct EncSyncChannel1* encSyncChan, struct SyncIp1* syncIP, int id, int hardwareHorizontalStrideAlignment, int hardwareVerticalStrideAlignment);
+void xvfbsync_encSyncChan_depopulate (struct EncSyncChannel1* encSyncChan);
