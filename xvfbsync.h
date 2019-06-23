@@ -78,7 +78,6 @@ struct SyncIp1
   int fd;
   bool quit;
   pthread_t pollingThread;
-  AL_TDriver* driver;
   pthread_mutex_t mutex;
   void (*(*eventListeners)) (struct ChannelStatus1*); 
   struct ChannelStatus1* channelStatuses;
@@ -106,17 +105,17 @@ struct DecSyncChannel1
   struct SyncChannel1 syncChannel;
 };
 
-struct threadInfo
+struct ThreadInfo
 {
   struct SyncIp1* syncIP;
 };
 
 
 int xvfbsync_syncIP_getFreeChannel(struct SyncIp1* syncIP);
-int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, AL_TDriver* driver, char const* device, int fd);
+int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, int fd);
 void xvfbsync_syncIP_depopulate (struct SyncIp1* syncIP);
 
-void xvfbsync_decSyncChan_addBuffer(struct DecSyncChannel1* decSyncChan, AL_TBuffer* buf);
+void xvfbsync_decSyncChan_addBuffer(struct DecSyncChannel1* decSyncChan, LLP2Buf* buf);
 void xvfbsync_decSyncChan_enable(struct DecSyncChannel1* decSyncChan);
 void xvfbsync_decSyncChan_populate(struct DecSyncChannel1* decSyncChan, struct SyncIp1* syncIP, int id);
 void xvfbsync_decSyncChan_depopulate(struct DecSyncChannel1* decSyncChan);

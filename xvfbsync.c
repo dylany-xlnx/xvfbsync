@@ -32,6 +32,10 @@
 
 #define MIN(a,b) ((a) < (b) ? a : b)
 
+/* ************** */
+/* xvfbsync queue */
+/* ************** */
+
 static void xvfbsync_queue_init (struct Queue* q) 
 {
   if(!q)
@@ -90,11 +94,10 @@ static int xvfbsync_queue_empty (struct Queue* q)
   return q->size == 0;
 }
 
-static int RoundUp (int iVal, int iRnd)
-{
-  assert ((iRnd % 2) == 0);
-  return (iVal + iRnd - 1) / iRnd * iRnd;
-}
+/* *********************** */
+/* xvfbsync syncIP helpers */
+/* *********************** */
+
 
 static void parseChanStatus (struct xvsfsync_stat* status, 
   struct ChannelStatus1* channelStatuses, int maxChannels, 
@@ -117,6 +120,11 @@ static void parseChanStatus (struct xvsfsync_stat* status,
     channelStatus->chromaDiffError = status->cdiff_err[channel];
   }
 }
+
+/* *************** */
+/* xvfbsync syncIP */
+/* *************** */
+
 
 static void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP)
 {
@@ -195,8 +203,7 @@ static void xvfbsync_syncIP_addBuffer(struct SyncIp1* syncIP, struct xvsfsync_ch
 
 static void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
 {
-  AL_EDriverError retCode = AL_Driver_PostMessage(syncIP->driver, syncIP->fd, 
-    AL_POLL_MSG, &timeout);
+  AL_EDriverError retCode = ioctl (syncIP->fd, AL_POLL_MSG, &timeout);
 
   if (retCode == DRIVER_TIMEOUT)
     return;
@@ -224,7 +231,7 @@ static void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
 
 static void* xvfbsync_syncIP_pollingRoutine(void* arg)
 {
-  struct SyncIp1* syncIP = ((struct threadInfo*)arg)->syncIP;
+  struct SyncIp1* syncIP = ((struct ThreadInfo*)arg)->syncIP;
 
   while(true)
   {
@@ -237,6 +244,7 @@ static void* xvfbsync_syncIP_pollingRoutine(void* arg)
   }
   pthread_mutex_unlock (&(syncIP->mutex));
   xvfbsync_syncIP_pollErrors(syncIP, 0);
+  free ((struct ThreadInfo*)arg);
   return NULL;
 }
 
@@ -262,18 +270,12 @@ static struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, 
   return &(syncIP->channelStatuses[chanId]);
 }
 
-
-int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, AL_TDriver* driver, 
-  char const* device, int fd)
+int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, int fd)
 {
-  struct threadInfo* tInfo = calloc (1, sizeof(struct threadInfo));
+  struct ThreadInfo* tInfo = calloc (1, sizeof(struct ThreadInfo));
   tInfo->syncIP = syncIP;
-  syncIP->driver = driver;
   syncIP->quit = false;
-  if(driver == NULL || device == NULL)
-    syncIP->fd = fd;
-  else
-    syncIP->fd = AL_Driver_Open (driver, device);
+  syncIP->fd = fd;
 
   if (syncIP->fd == -1) {
     printf ("Couldn't open the sync ip\n");
@@ -314,7 +316,18 @@ void xvfbsync_syncIP_depopulate (struct SyncIp1* syncIP)
   syncIP->quit = true;
   pthread_join (syncIP->pollingThread, NULL);
   pthread_mutex_destroy (&(syncIP->mutex));
-  AL_Driver_Close (syncIP->driver, syncIP->fd);
+  free (syncIP->channelStatuses);
+  free (syncIP->eventListeners);
+}
+
+/* ************************ */
+/* xvfbsync synChan helpers */
+/* ************************ */
+
+static int RoundUp (int iVal, int iRnd)
+{
+  assert ((iRnd % 2) == 0);
+  return (iVal + iRnd - 1) / iRnd * iRnd;
 }
  
 static void printFrameBufferConfig(struct xvsfsync_chan_config* config, int maxUsers, int maxCores)
@@ -441,17 +454,13 @@ static struct xvsfsync_chan_config setEncFrameBufferConfig(int channelId, LLP2Bu
   return config;
 }
 
-static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, AL_TBuffer* buf)
+static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, LLP2Buf* buf)
 {
-  AL_TSrcMetaData* srcMeta = (AL_TSrcMetaData*)AL_Buffer_GetMetaData(buf, AL_META_TYPE_SOURCE);
-  AL_PADDR physical = AL_Allocator_GetPhysicalAddr(buf->pAllocator, buf->hBuf);
-
-  if(!srcMeta)
-    printf ("source buffer requires an AL_META_TYPE_SOURCE metadata");
+  uint32_t physical = buf->phyAddr;
 
   struct xvsfsync_chan_config config;
 
-  config.luma_start_address[XVSFSYNC_PROD] = physical + srcMeta->tPlanes[AL_PLANE_Y].iOffset;
+  config.luma_start_address[XVSFSYNC_PROD] = physical + buf->tPlanes[PLANE_Y].iOffset;
 
   /*           <------------> stride
    *           <--------> width
@@ -464,20 +473,20 @@ static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, AL_TBu
    * end = total_size - stride + width - 1
    */
   // TODO : This should be LCU and 64 aligned
-  config.luma_end_address[XVSFSYNC_PROD] = config.luma_start_address[XVSFSYNC_PROD] + AL_SrcMetaData_GetLumaSize(srcMeta) - srcMeta->tPlanes[AL_PLANE_Y].iPitch + srcMeta->tDim.iWidth - 1;
-  config.luma_start_address[XVSFSYNC_CONS] = physical + srcMeta->tPlanes[AL_PLANE_Y].iOffset;
-  config.luma_end_address[XVSFSYNC_CONS] = config.luma_start_address[XVSFSYNC_CONS] + AL_SrcMetaData_GetLumaSize(srcMeta) - srcMeta->tPlanes[AL_PLANE_Y].iPitch + srcMeta->tDim.iWidth - 1;
+  config.luma_end_address[XVSFSYNC_PROD] = config.luma_start_address[XVSFSYNC_PROD] + xvsfsync_chan_getLumaSize (buf) - buf->tPlanes[PLANE_Y].iPitch + buf->tDim.iWidth - 1;
+  config.luma_start_address[XVSFSYNC_CONS] = physical + buf->tPlanes[PLANE_Y].iOffset;
+  config.luma_end_address[XVSFSYNC_CONS] = config.luma_start_address[XVSFSYNC_CONS] + xvsfsync_chan_getLumaSize (buf) - buf->tPlanes[PLANE_Y].iPitch + buf->tDim.iWidth - 1;
 
   /* chroma is the same, but the width depends on the format of the yuv
    * here we make the assumption that the fourcc is semi planar */
-  if(!AL_IsMonochrome(srcMeta->tFourCC))
+  if(!AL_IsMonochrome(buf->tFourCC))
   {
-    assert(AL_IsSemiPlanar(srcMeta->tFourCC));
-    config.chroma_start_address[XVSFSYNC_PROD] = physical + AL_SrcMetaData_GetOffsetUV(srcMeta);
+    assert(AL_IsSemiPlanar(buf->tFourCC));
+    config.chroma_start_address[XVSFSYNC_PROD] = physical + xvsfsync_chan_getOffsetUV (buf);
     // TODO : This should be LCU and 64 aligned
-    config.chroma_end_address[XVSFSYNC_PROD] = config.chroma_start_address[XVSFSYNC_PROD] + AL_SrcMetaData_GetChromaSize(srcMeta) - srcMeta->tPlanes[AL_PLANE_UV].iPitch + srcMeta->tDim.iWidth - 1;
-    config.chroma_start_address[XVSFSYNC_CONS] = physical + AL_SrcMetaData_GetOffsetUV(srcMeta);
-    config.chroma_end_address[XVSFSYNC_CONS] = config.chroma_start_address[XVSFSYNC_CONS] + AL_SrcMetaData_GetChromaSize(srcMeta) - srcMeta->tPlanes[AL_PLANE_UV].iPitch + srcMeta->tDim.iWidth - 1;
+    config.chroma_end_address[XVSFSYNC_PROD] = config.chroma_start_address[XVSFSYNC_PROD] + xvsfsync_chan_getChromaSize (buf) - buf->tPlanes[PLANE_UV].iPitch + buf->tDim.iWidth - 1;
+    config.chroma_start_address[XVSFSYNC_CONS] = physical + xvsfsync_chan_getOffsetUV (buf);
+    config.chroma_end_address[XVSFSYNC_CONS] = config.chroma_start_address[XVSFSYNC_CONS] + xvsfsync_chan_getChromaSize (buf) - buf->tPlanes[PLANE_UV].iPitch + buf->tDim.iWidth - 1;
   }
   else
   {
@@ -505,6 +514,10 @@ static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, AL_TBu
 
   return config;
 }
+
+/* **************** */
+/* xvfbsync synChan */
+/* **************** */
 
 static void xvfbsync_syncChan_listener (struct ChannelStatus1* status)
 {
@@ -537,7 +550,11 @@ static void xvfbsync_syncChan_depopulate (struct SyncChannel1* syncChan)
   xvfbsync_syncIP_removeListener(syncChan->sync, syncChan->id);
 }
 
-void xvfbsync_decSyncChan_addBuffer(struct DecSyncChannel1* decSyncChan, AL_TBuffer* buf)
+/* ******************** */
+/* xvfbsync decSyncChan */
+/* ******************** */
+
+void xvfbsync_decSyncChan_addBuffer(struct DecSyncChannel1* decSyncChan, LLP2Buf* buf)
 {
   struct xvsfsync_chan_config config = setDecFrameBufferConfig(decSyncChan->syncChannel.id, buf);
   //printFrameBufferConfig(config, decSyncChan->syncChannel->sync->maxUsers, decSyncChan->syncChannel->sync->maxCores);
@@ -563,41 +580,14 @@ void xvfbsync_decSyncChan_depopulate(struct DecSyncChannel1* decSyncChan)
   xvfbsync_syncChan_depopulate (&(decSyncChan->syncChannel));
 }
 
-void xvfbsync_encSyncChan_populate (struct EncSyncChannel1* encSyncChan, struct SyncIp1* syncIP, int id, int hardwareHorizontalStrideAlignment, int hardwareVerticalStrideAlignment)
-{
-  xvfbsync_syncChan_populate (&(encSyncChan->syncChannel), syncIP, id);
-  encSyncChan->isRunning = false;
-  encSyncChan->hardwareHorizontalStrideAlignment = hardwareHorizontalStrideAlignment;
-  encSyncChan->hardwareVerticalStrideAlignment = hardwareVerticalStrideAlignment;
-  if (pthread_mutex_init (&(encSyncChan->mutex), NULL)) {
-    printf ("Couldn't intialize lock");
-    return;
-  }
-  xvfbsync_queue_init (&(encSyncChan->buffers));  
-}
-
-void xvfbsync_encSyncChan_depopulate (struct EncSyncChannel1* encSyncChan)
-{
-  xvfbsync_syncChan_depopulate (&encSyncChan->syncChannel);
-
-  while (!xvfbsync_queue_empty (&encSyncChan->buffers))
-  {
-    LLP2Buf* buf = xvfbsync_queue_front (&encSyncChan->buffers);
-    free(buf);
-    xvfbsync_queue_pop (&encSyncChan->buffers);
-  }
-}
+/* ******************** */
+/* xvfbsync encSyncChan */
+/* ******************** */
 
 static void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf, int numFbToEnable)
 {
   if (buf)
   {
-    struct xvsfsync_dma_info info;
-    info.fd = encSyncChan->syncChannel.sync->fd;
-    if (ioctl (encSyncChan->syncChannel.sync->fd, XVSFSYNC_GET_PHY_ADDR, &info))
-      printf("ioctl error\n");
-    printf("IOCTL PHY ADDR: %d", info.phy_addr);
-    printf("Passed PHY ADDR: %d", buf->phyAddr);
     /* we do not support adding buffer when the pipeline is running */
     assert (!encSyncChan->isRunning);
     xvfbsync_queue_push (&encSyncChan->buffers, buf);
@@ -647,5 +637,30 @@ void xvfbsync_encSyncChan_enable(struct EncSyncChannel1* encSyncChan)
   encSyncChan->syncChannel.enabled = true;
   printf ("Enable channel %d\n", encSyncChan->syncChannel.id);
   pthread_mutex_unlock (&encSyncChan->mutex);
+}
+
+void xvfbsync_encSyncChan_populate (struct EncSyncChannel1* encSyncChan, struct SyncIp1* syncIP, int id, int hardwareHorizontalStrideAlignment, int hardwareVerticalStrideAlignment)
+{
+  xvfbsync_syncChan_populate (&(encSyncChan->syncChannel), syncIP, id);
+  encSyncChan->isRunning = false;
+  encSyncChan->hardwareHorizontalStrideAlignment = hardwareHorizontalStrideAlignment;
+  encSyncChan->hardwareVerticalStrideAlignment = hardwareVerticalStrideAlignment;
+  if (pthread_mutex_init (&(encSyncChan->mutex), NULL)) {
+    printf ("Couldn't intialize lock");
+    return;
+  }
+  xvfbsync_queue_init (&(encSyncChan->buffers));  
+}
+
+void xvfbsync_encSyncChan_depopulate (struct EncSyncChannel1* encSyncChan)
+{
+  xvfbsync_syncChan_depopulate (&encSyncChan->syncChannel);
+
+  while (!xvfbsync_queue_empty (&encSyncChan->buffers))
+  {
+    LLP2Buf* buf = xvfbsync_queue_front (&encSyncChan->buffers);
+    free(buf);
+    xvfbsync_queue_pop (&encSyncChan->buffers);
+  }
 }
 
