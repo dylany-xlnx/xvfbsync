@@ -8,14 +8,60 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 
 #include "xvsfsync.h"
-#include "lib_common/IDriver.h"
-#include "lib_common/BufferAPI.h"
-#include "lib_common/BufferSrcMeta.h"
-#include "lib_common/FourCC.h"
 
 #define BIT(x) (1 << (x))
 #define MAX_FB_NUMBER 3
 #define MAX_USER 2 /* consumer and producter */
+
+#define XVFBSYNC_FOURCC2(A, B, C, D) ((uint32_t)(((uint32_t)((A))) \
+                                       | ((uint32_t)((B)) << 8) \
+                                       | ((uint32_t)((C)) << 16) \
+                                       | ((uint32_t)((D)) << 24)))
+
+#define FOURCC_MAPPING(FCC, ChromaMode, BD, StorageMode, ChromaOrder, Compression, Packed10) { FCC, { ChromaMode, BD, StorageMode, ChromaOrder, Compression, Packed10 } \
+}
+
+typedef enum e_ChromaMode
+{
+  CHROMA_MONO, /*!< Monochrome */
+  CHROMA_4_0_0 = CHROMA_MONO, /*!< 4:0:0 = Monochrome */
+  CHROMA_4_2_0, /*!< 4:2:0 chroma sampling */
+  CHROMA_4_2_2, /*!< 4:2:2 chroma sampling */
+  CHROMA_4_4_4, /*!< 4:4:4 chroma sampling : Not supported */
+  CHROMA_MAX_ENUM, /* sentinel */
+} EChromaMode;
+
+typedef enum e_FbStorageMode
+{
+  FB_RASTER = 0,
+  FB_TILE_32x4 = 2,
+  FB_TILE_64x4 = 3,
+  FB_MAX_ENUM, /* sentinel */
+} EFbStorageMode;
+
+typedef enum e_ChromaOrder
+{
+  C_ORDER_NO_CHROMA,
+  C_ORDER_U_V,
+  C_ORDER_V_U,
+  C_ORDER_SEMIPLANAR
+} EChromaOrder;
+
+typedef struct t_PicFormat
+{
+  EChromaMode eChromaMode;
+  uint8_t uBitDepth;
+  EFbStorageMode eStorageMode;
+  EChromaOrder eChromaOrder;
+  bool bCompressed;
+  bool b10bPacked;
+} TPicFormat;
+
+typedef struct tFourCCMapping
+{
+  uint32_t tfourCC;
+  TPicFormat tPictFormat;
+} TFourCCMapping;
 
 typedef enum e_PlaneId
 {

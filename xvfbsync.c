@@ -98,7 +98,6 @@ static int xvfbsync_queue_empty (struct Queue* q)
 /* xvfbsync syncIP helpers */
 /* *********************** */
 
-
 static void parseChanStatus (struct xvsfsync_stat* status, 
   struct ChannelStatus1* channelStatuses, int maxChannels, 
   int maxUsers, int maxBuffers)
@@ -121,11 +120,6 @@ static void parseChanStatus (struct xvsfsync_stat* status,
   }
 }
 
-/* *************** */
-/* xvfbsync syncIP */
-/* *************** */
-
-
 static void xvfbsync_syncIP_getLatestChanStatus(struct SyncIp1* syncIP)
 {
   struct xvsfsync_stat chan_status;
@@ -147,36 +141,6 @@ static void xvfbsync_syncIP_resetStatus(struct SyncIp1* syncIP, int chanId)
 
   if (ioctl (syncIP->fd, XVSFSYNC_CLR_CHAN_ERR, &clr))
     printf ("Couldnt reset status of channel %d", chanId);
-}
-
-int xvfbsync_syncIP_getFreeChannel(struct SyncIp1* syncIP)
-{
-  pthread_mutex_lock (&(syncIP->mutex));
-  xvfbsync_syncIP_getLatestChanStatus(syncIP);
-
-  /* TODO(driver lowlat2 xilinx) give a non racy way to choose a free channel
-   * For now we look if all the framebuffer of a channel are available to
-   * decide if a channel is free or not
-   */
-  for(int channel = 0; channel < syncIP->maxChannels; ++channel)
-  {
-    bool isAvailable = true;
-
-    for(int buffer = 0; buffer < syncIP->maxBuffers; ++buffer)
-    {
-      for(int user = 0; user < syncIP->maxUsers; ++user)
-        isAvailable = isAvailable && syncIP->channelStatuses[channel].fbAvail[buffer][user];
-    }
-
-    if(isAvailable) {
-      pthread_mutex_unlock (&(syncIP->mutex));
-      return channel;
-    }
-  }
-
-  pthread_mutex_unlock (&(syncIP->mutex));
-  printf ("No channel available");
-  return -1;
 }
 
 static void xvfbsync_syncIP_enableChannel(struct SyncIp1* syncIP, int chanId)
@@ -203,6 +167,7 @@ static void xvfbsync_syncIP_addBuffer(struct SyncIp1* syncIP, struct xvsfsync_ch
 
 static void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
 {
+  /*
   AL_EDriverError retCode = ioctl (syncIP->fd, AL_POLL_MSG, &timeout);
 
   if (retCode == DRIVER_TIMEOUT)
@@ -226,7 +191,8 @@ static void xvfbsync_syncIP_pollErrors(struct SyncIp1* syncIP, int timeout)
     }
   }
 
-  pthread_mutex_unlock (&(syncIP->mutex));
+  pthread_mutex_unlock (&(syncIP->mutex));*/
+  return;
 }
 
 static void* xvfbsync_syncIP_pollingRoutine(void* arg)
@@ -268,6 +234,40 @@ static struct ChannelStatus1* xvfbsync_syncIP_getStatus(struct SyncIp1* syncIP, 
   xvfbsync_syncIP_getLatestChanStatus(syncIP);
   pthread_mutex_unlock (&(syncIP->mutex));
   return &(syncIP->channelStatuses[chanId]);
+}
+
+/* *************** */
+/* xvfbsync syncIP */
+/* *************** */
+
+int xvfbsync_syncIP_getFreeChannel(struct SyncIp1* syncIP)
+{
+  pthread_mutex_lock (&(syncIP->mutex));
+  xvfbsync_syncIP_getLatestChanStatus(syncIP);
+
+  /* TODO(driver lowlat2 xilinx) give a non racy way to choose a free channel
+   * For now we look if all the framebuffer of a channel are available to
+   * decide if a channel is free or not
+   */
+  for(int channel = 0; channel < syncIP->maxChannels; ++channel)
+  {
+    bool isAvailable = true;
+
+    for(int buffer = 0; buffer < syncIP->maxBuffers; ++buffer)
+    {
+      for(int user = 0; user < syncIP->maxUsers; ++user)
+        isAvailable = isAvailable && syncIP->channelStatuses[channel].fbAvail[buffer][user];
+    }
+
+    if(isAvailable) {
+      pthread_mutex_unlock (&(syncIP->mutex));
+      return channel;
+    }
+  }
+
+  pthread_mutex_unlock (&(syncIP->mutex));
+  printf ("No channel available");
+  return -1;
 }
 
 int xvfbsync_syncIP_populate (struct SyncIp1* syncIP, int fd)
@@ -320,9 +320,100 @@ void xvfbsync_syncIP_depopulate (struct SyncIp1* syncIP)
   free (syncIP->eventListeners);
 }
 
-/* ************************ */
-/* xvfbsync synChan helpers */
-/* ************************ */
+/* ************************* */
+/* xvfbsync syncChan helpers */
+/* ************************* */
+
+static const TFourCCMapping FourCCMappings[] =
+{
+  // planar: 8b
+  FOURCC_MAPPING(XVFBSYNC_FOURCC2('I', '4', '2', '0'), CHROMA_4_2_0, 8, FB_RASTER, C_ORDER_U_V, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('I', 'Y', 'U', 'V'), CHROMA_4_2_0, 8, FB_RASTER, C_ORDER_U_V, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('Y', 'V', '1', '2'), CHROMA_4_2_0, 8, FB_RASTER, C_ORDER_V_U, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('I', '4', '2', '2'), CHROMA_4_2_2, 8, FB_RASTER, C_ORDER_U_V, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('Y', 'V', '1', '6'), CHROMA_4_2_2, 8, FB_RASTER, C_ORDER_U_V, false, false)
+  // planar: 10b
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('I', '0', 'A', 'L'), CHROMA_4_2_0, 10, FB_RASTER, C_ORDER_U_V, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('I', '2', 'A', 'L'), CHROMA_4_2_2, 10, FB_RASTER, C_ORDER_U_V, false, false)
+
+  // semi-planar: 8b
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('N', 'V', '1', '2'), CHROMA_4_2_0, 8, FB_RASTER, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('N', 'V', '1', '6'), CHROMA_4_2_2, 8, FB_RASTER, C_ORDER_SEMIPLANAR, false, false)
+  // semi-planar: 10b
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('P', '0', '1', '0'), CHROMA_4_2_0, 10, FB_RASTER, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('P', '2', '1', '0'), CHROMA_4_2_2, 10, FB_RASTER, C_ORDER_SEMIPLANAR, false, false)
+
+  // monochrome
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('Y', '8', '0', '0'), CHROMA_4_0_0, 8, FB_RASTER, C_ORDER_NO_CHROMA, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('Y', '0', '1', '0'), CHROMA_4_0_0, 10, FB_RASTER, C_ORDER_NO_CHROMA, false, false)
+
+  // tile : 64x4
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', '0', '8'), CHROMA_4_2_0, 8, FB_TILE_64x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', '2', '8'), CHROMA_4_2_2, 8, FB_TILE_64x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', 'm', '8'), CHROMA_4_0_0, 8, FB_TILE_64x4, C_ORDER_NO_CHROMA, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', '0', 'A'), CHROMA_4_2_0, 10, FB_TILE_64x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', '2', 'A'), CHROMA_4_2_2, 10, FB_TILE_64x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '6', 'm', 'A'), CHROMA_4_0_0, 10, FB_TILE_64x4, C_ORDER_NO_CHROMA, false, false)
+  // tile : 32x4
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', '0', '8'), CHROMA_4_2_0, 8, FB_TILE_32x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', '2', '8'), CHROMA_4_2_2, 8, FB_TILE_32x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', 'm', '8'), CHROMA_4_0_0, 8, FB_TILE_32x4, C_ORDER_NO_CHROMA, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', '0', 'A'), CHROMA_4_2_0, 10, FB_TILE_32x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', '2', 'A'), CHROMA_4_2_2, 10, FB_TILE_32x4, C_ORDER_SEMIPLANAR, false, false)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('T', '5', 'm', 'A'), CHROMA_4_0_0, 10, FB_TILE_32x4, C_ORDER_NO_CHROMA, false, false)
+
+
+  // 10b packed
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('X', 'V', '1', '0'), CHROMA_4_0_0, 10, FB_RASTER, C_ORDER_NO_CHROMA, false, true)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('X', 'V', '1', '5'), CHROMA_4_2_0, 10, FB_RASTER, C_ORDER_SEMIPLANAR, false, true)
+  , FOURCC_MAPPING(XVFBSYNC_FOURCC2('X', 'V', '2', '0'), CHROMA_4_2_2, 10, FB_RASTER, C_ORDER_SEMIPLANAR, false, true)
+};
+
+static const int FourCCMappingSize = sizeof(FourCCMappings) / sizeof(FourCCMappings[0]);
+
+
+static bool GetPicFormat(uint32_t tFourCC, TPicFormat* tPicFormat)
+{
+  const TFourCCMapping* pBeginMapping = &FourCCMappings[0];
+  const TFourCCMapping* pEndMapping = pBeginMapping + FourCCMappingSize;
+
+  for(const TFourCCMapping* pMapping = pBeginMapping; pMapping != pEndMapping; pMapping++)
+  {
+    if(pMapping->tfourCC == tFourCC)
+    {
+      *tPicFormat = pMapping->tPictFormat;
+      return true;
+    }
+  }
+
+  assert(0);
+
+  return false;
+}
+
+
+bool IsTiled(uint32_t tFourCC)
+{
+  TPicFormat tPicFormat;
+  return GetPicFormat(tFourCC, &tPicFormat) && (tPicFormat.eStorageMode != FB_RASTER);
+}
+
+EChromaMode GetChromaMode(uint32_t tFourCC)
+{
+  TPicFormat tPicFormat;
+  return GetPicFormat(tFourCC, &tPicFormat) ? tPicFormat.eChromaMode : (EChromaMode) - 1;
+}
+
+bool IsSemiPlanar(uint32_t tFourCC)
+{
+  TPicFormat tPicFormat;
+  return GetPicFormat(tFourCC, &tPicFormat) && (tPicFormat.eChromaOrder == C_ORDER_SEMIPLANAR);
+}
+
+bool IsMonochrome(uint32_t tFourCC)
+{
+  return GetChromaMode(tFourCC) == CHROMA_MONO;
+}
 
 static int RoundUp (int iVal, int iRnd)
 {
@@ -360,24 +451,24 @@ static void printFrameBufferConfig(struct xvsfsync_chan_config* config, int maxU
 
 static int xvsfsync_chan_getLumaSize(LLP2Buf* buf)
 {
-  if(AL_IsTiled(buf->tFourCC))
+  if(IsTiled(buf->tFourCC))
     return buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight / 4;
   return buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight;
 }
 
 static int xvsfsync_chan_getChromaSize(LLP2Buf* buf)
 {
-  AL_EChromaMode eCMode = AL_GetChromaMode(buf->tFourCC);
+  EChromaMode eCMode = GetChromaMode(buf->tFourCC);
 
-  if(eCMode == AL_CHROMA_MONO)
+  if(eCMode == CHROMA_MONO)
     return 0;
 
-  int const iHeightC = (eCMode == AL_CHROMA_4_2_0) ? buf->tDim.iHeight / 2 : buf->tDim.iHeight;
+  int const iHeightC = (eCMode == CHROMA_4_2_0) ? buf->tDim.iHeight / 2 : buf->tDim.iHeight;
 
-  if(AL_IsTiled(buf->tFourCC))
+  if(IsTiled(buf->tFourCC))
     return buf->tPlanes[PLANE_UV].iPitch * iHeightC / 4;
 
-  if(AL_IsSemiPlanar(buf->tFourCC))
+  if(IsSemiPlanar(buf->tFourCC))
     return buf->tPlanes[PLANE_UV].iPitch * iHeightC;
 
   return buf->tPlanes[PLANE_UV].iPitch * iHeightC * 2;
@@ -386,8 +477,8 @@ static int xvsfsync_chan_getChromaSize(LLP2Buf* buf)
 static int xvsfsync_chan_getOffsetUV(LLP2Buf* buf)
 {
   assert(buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight <= buf->tPlanes[PLANE_UV].iOffset ||
-         (AL_IsTiled(buf->tFourCC) &&
-          (buf->tPlanes[AL_PLANE_Y].iPitch * buf->tDim.iHeight / 4 <= buf->tPlanes[PLANE_UV].iOffset)));
+         (IsTiled(buf->tFourCC) &&
+          (buf->tPlanes[PLANE_Y].iPitch * buf->tDim.iHeight / 4 <= buf->tPlanes[PLANE_UV].iOffset)));
   return buf->tPlanes[PLANE_UV].iOffset;
 }
 
@@ -417,13 +508,13 @@ static struct xvsfsync_chan_config setEncFrameBufferConfig(int channelId, LLP2Bu
 
   /* chroma is the same, but the width depends on the format of the yuv
    * here we make the assumption that the fourcc is semi planar */
-  if(!AL_IsMonochrome(buf->tFourCC))
+  if(!IsMonochrome(buf->tFourCC))
   {
-    assert(AL_IsSemiPlanar(buf->tFourCC));
+    assert(IsSemiPlanar(buf->tFourCC));
     config.chroma_start_address[XVSFSYNC_PROD] = physical + xvsfsync_chan_getOffsetUV (buf);
-    config.chroma_end_address[XVSFSYNC_PROD] = config.chroma_start_address[XVSFSYNC_PROD] + xvsfsync_chan_getChromaSize (buf) - buf->tPlanes[AL_PLANE_UV].iPitch + buf->tDim.iWidth - 1;
+    config.chroma_end_address[XVSFSYNC_PROD] = config.chroma_start_address[XVSFSYNC_PROD] + xvsfsync_chan_getChromaSize (buf) - buf->tPlanes[PLANE_UV].iPitch + buf->tDim.iWidth - 1;
     config.chroma_start_address[XVSFSYNC_CONS] = physical + xvsfsync_chan_getOffsetUV (buf);
-    int iVerticalFactor = (AL_GetChromaMode(buf->tFourCC) == AL_CHROMA_4_2_0) ? 2 : 1;
+    int iVerticalFactor = (GetChromaMode(buf->tFourCC) == CHROMA_4_2_0) ? 2 : 1;
     int iHardwareChromaVerticalPitch = RoundUp((buf->tDim.iHeight / iVerticalFactor), (hardwareVerticalStrideAlignment / iVerticalFactor));
     config.chroma_end_address[XVSFSYNC_CONS] = config.chroma_start_address[XVSFSYNC_CONS] + (iHardwarePitch * (iHardwareChromaVerticalPitch - 1)) + RoundUp(buf->tDim.iWidth, hardwareHorizontalStrideAlignment) - 1;
   }
@@ -479,9 +570,9 @@ static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, LLP2Bu
 
   /* chroma is the same, but the width depends on the format of the yuv
    * here we make the assumption that the fourcc is semi planar */
-  if(!AL_IsMonochrome(buf->tFourCC))
+  if(!IsMonochrome(buf->tFourCC))
   {
-    assert(AL_IsSemiPlanar(buf->tFourCC));
+    assert(IsSemiPlanar(buf->tFourCC));
     config.chroma_start_address[XVSFSYNC_PROD] = physical + xvsfsync_chan_getOffsetUV (buf);
     // TODO : This should be LCU and 64 aligned
     config.chroma_end_address[XVSFSYNC_PROD] = config.chroma_start_address[XVSFSYNC_PROD] + xvsfsync_chan_getChromaSize (buf) - buf->tPlanes[PLANE_UV].iPitch + buf->tDim.iWidth - 1;
@@ -515,10 +606,6 @@ static struct xvsfsync_chan_config setDecFrameBufferConfig(int channelId, LLP2Bu
   return config;
 }
 
-/* **************** */
-/* xvfbsync synChan */
-/* **************** */
-
 static void xvfbsync_syncChan_listener (struct ChannelStatus1* status)
 {
   printf ("watchdog: %d, sync: %d, ldiff: %d, cdiff: %d\n", status->watchdogError, status->syncError, status->lumaDiffError, status->chromaDiffError);
@@ -533,6 +620,10 @@ static void xvfbsync_syncChan_disable (struct SyncChannel1* syncChan)
   syncChan->enabled = false;
   printf ("Disable channel %d\n", syncChan->id);
 }
+
+/* ***************** */
+/* xvfbsync syncChan */
+/* ***************** */
 
 static void xvfbsync_syncChan_populate (struct SyncChannel1* syncChan, struct SyncIp1* syncIP, int id)
 {
@@ -580,9 +671,9 @@ void xvfbsync_decSyncChan_depopulate(struct DecSyncChannel1* decSyncChan)
   xvfbsync_syncChan_depopulate (&(decSyncChan->syncChannel));
 }
 
-/* ******************** */
-/* xvfbsync encSyncChan */
-/* ******************** */
+/* **************************** */
+/* xvfbsync encSyncChan helpers */
+/* **************************** */
 
 static void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf, int numFbToEnable)
 {
@@ -619,6 +710,10 @@ static void xvfbsync_encSyncChan_addBuffer_(struct EncSyncChannel1* encSyncChan,
     --numFbToEnable;
   }
 }
+
+/* ******************** */
+/* xvfbsync encSyncChan */
+/* ******************** */
 
 void xvfbsync_encSyncChan_addBuffer(struct EncSyncChannel1* encSyncChan, LLP2Buf* buf)
 {
@@ -663,4 +758,3 @@ void xvfbsync_encSyncChan_depopulate (struct EncSyncChannel1* encSyncChan)
     xvfbsync_queue_pop (&encSyncChan->buffers);
   }
 }
-
