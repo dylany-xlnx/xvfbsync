@@ -21,7 +21,7 @@ typedef uint64_t u64;
 #define FOURCC_MAPPING(FCC, ChromaMode, BD, StorageMode, ChromaOrder, Compression, Packed10) { FCC, { ChromaMode, BD, StorageMode, ChromaOrder, Compression, Packed10 } \
 }
 
-typedef enum e_ChromaMode
+typedef enum e_ChromaMode1
 {
   CHROMA_MONO, /*!< Monochrome */
   CHROMA_4_0_0 = CHROMA_MONO, /*!< 4:0:0 = Monochrome */
@@ -31,7 +31,7 @@ typedef enum e_ChromaMode
   CHROMA_MAX_ENUM, /* sentinel */
 } EChromaMode;
 
-typedef enum e_FbStorageMode
+typedef enum e_FbStorageMode1
 {
   FB_RASTER = 0,
   FB_TILE_32x4 = 2,
@@ -39,7 +39,7 @@ typedef enum e_FbStorageMode
   FB_MAX_ENUM, /* sentinel */
 } EFbStorageMode;
 
-typedef enum e_ChromaOrder
+typedef enum e_ChromaOrder1
 {
   C_ORDER_NO_CHROMA,
   C_ORDER_U_V,
@@ -47,7 +47,7 @@ typedef enum e_ChromaOrder
   C_ORDER_SEMIPLANAR
 } EChromaOrder;
 
-typedef struct t_PicFormat
+typedef struct t_PicFormat1
 {
   EChromaMode eChromaMode;
   uint8_t uBitDepth;
@@ -57,13 +57,13 @@ typedef struct t_PicFormat
   bool b10bPacked;
 } TPicFormat;
 
-typedef struct tFourCCMapping
+typedef struct tFourCCMapping1
 {
   uint32_t tfourCC;
   TPicFormat tPictFormat;
 } TFourCCMapping;
 
-typedef enum e_PlaneId
+typedef enum e_PlaneId1
 {
   PLANE_Y,
   PLANE_UV,
